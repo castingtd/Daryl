@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DARYL CROSSES THE BORDER</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Bangers&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0a1a2e;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    min-height:100vh; overflow:hidden;
+  }
+  #hud {
+    width:900px; display:flex; justify-content:space-between;
+    align-items:center; padding:8px 20px;
+    background:#071020; border-bottom:4px solid #cc0000;
+    box-shadow:0 2px 20px #cc000044;
+  }
+  .hud-item {
+    font-family:'Press Start 2P',monospace;
+    font-size:9px; color:#fff; letter-spacing:1px; line-height:1.9;
+  }
+  .hud-item span { color:#ff4444; text-shadow:0 0 8px #ff4444; }
+  .hud-title {
+    font-family:'Bangers',cursive; font-size:18px;
+    color:#ff3333; text-shadow:2px 2px 0 #660000, 0 0 20px #ff000044;
+    letter-spacing:2px;
+  }
+  #gameCanvas {
+    display:block;
+    border:4px solid #cc0000;
+    box-shadow:0 0 0 4px #800000, 0 0 40px #cc000044;
+  }
+  #overlay {
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    text-align:center; pointer-events:none; z-index:10;
+    background:rgba(4,10,20,0.94); padding:28px 40px;
+    border:4px solid #cc0000;
+    box-shadow:0 0 0 4px #800000, 0 0 50px #cc000055;
+  }
+  #overlay h1 {
+    font-family:'Bangers',cursive; font-size:42px;
+    color:#ff3333; text-shadow:3px 3px 0 #800000, 6px 6px 0 #000;
+    letter-spacing:3px; line-height:1.2; margin-bottom:12px;
+  }
+  #overlay .sub {
+    font-family:'Press Start 2P',monospace; font-size:8px;
+    color:#ff4444; letter-spacing:2px; margin-bottom:18px;
+    animation:blink 1s step-end infinite;
+  }
+  #overlay .hint {
+    font-family:'Press Start 2P',monospace; font-size:7px;
+    color:#ffaa88; letter-spacing:1px; line-height:2.5;
+  }
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+  #wrapper{position:relative;}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div class="hud-item">SCORE<br><span id="scoreEl">000000</span></div>
+  <div class="hud-title">🍁 DARYL CROSSES THE BORDER 🍁</div>
+  <div class="hud-item">AGENTS<br><span id="agentsEl">0 / 8</span></div>
+  <div class="hud-item">LIVES<br><span id="livesEl">♥ ♥ ♥</span></div>
+</div>
+<div id="wrapper">
+  <canvas id="gameCanvas" width="900" height="500"></canvas>
+  <div id="overlay">
+    <h1>🍁 DARYL<br>CROSSES<br>THE BORDER! 🍁</h1>
+    <div class="sub">▶ PRESS SPACE TO START ◀</div>
+    <div class="hint">
+      ARROW KEYS / WASD — MOVE<br>
+      SPACE / UP — JUMP<br>
+      STOMP ALL BORDER AGENTS! 🎩<br>
+      REACH THE CANADIAN FLAG! 🍁<br>
+      CITIZENSHIP AWAITS!
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const W = 900, H = 500;
+
+let gameState = 'title';
+let score = 0, lives = 3, agentsDefeated = 0;
+const TOTAL_AGENTS = 8;
+let keys = {}, particles = [], snowflakes = [], frame = 0;
+
+// ── CANADA COLORS ─────────────────────────────────────────
+const RED    = '#cc0000';
+const RED_LT = '#ff3333';
+const WHITE  = '#ffffff';
+const SNOW   = '#e8f4ff';
+const PINE   = '#1a4a1a';
+const PINE_LT= '#2d7a2d';
+const SKY1   = '#87b8e8';
+const SKY2   = '#c8dff5';
+const GOLD   = '#ffd700';
+const SKIN   = '#8B4513';  // Daryl's warm brown skin
+const SKIN_LT= '#A0522D';
+
+const GY = 444;
+
+// ── PLATFORMS ─────────────────────────────────────────────
+const PLATFORMS = [
+  // Ground sections
+  {x:0,   y:GY, w:200, h:56, t:'ground'},
+  {x:255, y:GY, w:190, h:56, t:'ground'},
+  {x:500, y:GY, w:400, h:56, t:'ground'},
+  // Mid platforms
+  {x:55,  y:362,w:90,  h:16, t:'snow'},
+  {x:200, y:326,w:90,  h:16, t:'snow'},
+  {x:320, y:355,w:90,  h:16, t:'snow'},
+  {x:440, y:308,w:100, h:16, t:'snow'},
+  {x:570, y:345,w:90,  h:16, t:'snow'},
+  {x:685, y:308,w:90,  h:16, t:'snow'},
+  {x:800, y:348,w:90,  h:16, t:'snow'},
+  // High platforms
+  {x:100, y:252,w:90,  h:16, t:'ice'},
+  {x:248, y:225,w:80,  h:16, t:'ice'},
+  {x:382, y:210,w:90,  h:16, t:'ice'},
+  {x:522, y:220,w:80,  h:16, t:'ice'},
+  {x:652, y:205,w:90,  h:16, t:'ice'},
+  {x:792, y:222,w:90,  h:16, t:'ice'},
+  // Roof platforms
+  {x:168, y:148,w:80,  h:16, t:'roof'},
+  {x:318, y:132,w:90,  h:16, t:'roof'},
+  {x:468, y:122,w:80,  h:16, t:'roof'},
+  {x:618, y:136,w:90,  h:16, t:'roof'},
+  {x:768, y:130,w:90,  h:16, t:'roof'},
+];
+
+// ── ENEMIES (border agents) ────────────────────────────────
+const ENEMY_DEFS = [
+  {x:120, y:GY-30,  dir:1,  sp:1.1, px:0,   pw:200, py:GY,  t:'agent'},
+  {x:350, y:GY-30,  dir:-1, sp:1.3, px:255, pw:190, py:GY,  t:'agent'},
+  {x:680, y:GY-30,  dir:1,  sp:1.0, px:500, pw:400, py:GY,  t:'sergeant'},
+  {x:330, y:338,    dir:1,  sp:1.2, px:320, pw:90,  py:355, t:'agent'},
+  {x:450, y:292,    dir:-1, sp:1.1, px:440, pw:100, py:308, t:'sergeant'},
+  {x:695, y:292,    dir:1,  sp:1.3, px:685, pw:90,  py:308, t:'agent'},
+  {x:258, y:209,    dir:1,  sp:1.0, px:248, pw:80,  py:225, t:'agent'},
+  {x:660, y:189,    dir:-1, sp:1.2, px:652, pw:90,  py:205, t:'sergeant'},
+];
+
+const GOAL = {x:828, y:GY-105, w:72, h:105};
+
+let player, enemies;
+
+function initLevel(){
+  player = {x:28,y:GY-40,w:24,h:40,vx:0,vy:0,onGround:false,dir:1,aF:0,aT:0,inv:0};
+  enemies = ENEMY_DEFS.map(e=>({...e,w:28,h:34,vy:0,onGround:false,dead:false,dT:0,aF:0,aT:0}));
+  agentsDefeated=0; updateHUD(); particles=[];
+  // Init snowflakes
+  snowflakes = Array.from({length:80},()=>({
+    x:Math.random()*W, y:Math.random()*H,
+    s:.8+Math.random()*2, sp:.3+Math.random()*.8,
+    sw:Math.sin(Math.random()*Math.PI*2),
+  }));
+}
+
+const GRAV=0.54, JP=-13.2, SPD=3.8;
+
+function physics(e){
+  e.vy+=GRAV; e.x+=e.vx; e.y+=e.vy; e.onGround=false;
+  for(const p of PLATFORMS){
+    if(e.x+e.w>p.x&&e.x<p.x+p.w&&e.y+e.h>p.y&&e.y+e.h<p.y+p.h+Math.abs(e.vy)+2&&e.vy>=0){
+      e.y=p.y-e.h; e.vy=0; e.onGround=true;
+    }
+  }
+  if(e.x<0)e.x=0; if(e.x+e.w>W)e.x=W-e.w;
+}
+
+function hit(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+
+function burst(x,y,col,n=10){
+  for(let i=0;i<n;i++){
+    const a=(Math.PI*2/n)*i,s=2+Math.random()*4;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1.5,
+      life:1,dec:.026+Math.random()*.03,sz:2+Math.random()*5,col});
+  }
+}
+
+function update(){
+  frame++;
+  if(gameState!=='playing'){draw();requestAnimationFrame(update);return;}
+
+  const L=keys['ArrowLeft']||keys['KeyA'],R=keys['ArrowRight']||keys['KeyD'];
+  const J=keys['Space']||keys['ArrowUp']||keys['KeyW'];
+  if(L){player.vx=-SPD;player.dir=-1;}
+  else if(R){player.vx=SPD;player.dir=1;}
+  else player.vx*=0.76;
+
+  if(J&&player.onGround){player.vy=JP;burst(player.x+12,player.y+40,SNOW,4);}
+  physics(player);
+  if(Math.abs(player.vx)>.4){if(++player.aT>7){player.aT=0;player.aF=(player.aF+1)%4;}}else player.aF=0;
+  if(player.inv>0)player.inv--;
+  if(player.y>H+80)die();
+
+  for(const e of enemies){
+    if(e.dead){if(--e.dT<=0)e.rm=true;continue;}
+    e.vx=e.dir*e.sp; physics(e);
+    if(e.x<=e.px){e.dir=1;e.x=e.px;}
+    if(e.x+e.w>=e.px+e.pw){e.dir=-1;e.x=e.px+e.pw-e.w;}
+    if(++e.aT>9){e.aT=0;e.aF=(e.aF+1)%2;}
+    if(player.inv===0&&hit(player,e)){
+      if(player.vy>0&&player.y+player.h<e.y+e.h/2+10){
+        e.dead=true;e.dT=38;player.vy=-9;
+        agentsDefeated++;score+=300;updateHUD();
+        burst(e.x+14,e.y+14,RED,12);
+        burst(e.x+14,e.y+14,WHITE,8);
+      }else die();
+    }
+  }
+  enemies=enemies.filter(e=>!e.rm);
+
+  // Win: all agents defeated AND reach flag
+  if(agentsDefeated>=TOTAL_AGENTS&&hit(player,GOAL)){
+    gameState='win';score+=9999;updateHUD();
+    burst(GOAL.x+36,GOAL.y+52,RED,40);
+    burst(GOAL.x+36,GOAL.y+52,WHITE,30);
+    burst(GOAL.x+36,GOAL.y+52,GOLD,20);
+    overlay.innerHTML=`
+      <h1 style="color:#ff3333">🍁 WELCOME TO<br>CANADA,<br>DARYL! 🍁</h1>
+      <div class="sub">★ CITIZENSHIP GRANTED! ★</div>
+      <div class="hint">EH! YOU MADE IT, BUDDY!<br>SORRY ABOUT THE AGENTS, EH?<br><br>▶ PRESS SPACE TO PLAY AGAIN ◀</div>
+    `;
+    overlay.style.display='block';
+  } else if(agentsDefeated<TOTAL_AGENTS&&hit(player,GOAL)){
+    // Bounced back — need to defeat all agents first
+    player.vx = -5; player.vy = -6;
+  }
+
+  // Snow
+  for(const s of snowflakes){
+    s.y+=s.sp; s.x+=Math.sin(frame*.02+s.sw)*.4;
+    if(s.y>H+5){s.y=-5;s.x=Math.random()*W;}
+  }
+
+  for(const p of particles){p.x+=p.vx;p.y+=p.vy;p.vy+=.12;p.life-=p.dec;}
+  particles=particles.filter(p=>p.life>0);
+  draw();requestAnimationFrame(update);
+}
+
+function die(){
+  if(player.inv>0)return;
+  lives--;updateHUD();burst(player.x+12,player.y+20,'#ff4444',16);
+  if(lives<=0){
+    gameState='dead';
+    overlay.innerHTML=`
+      <h1 style="color:#ff3333">TURNED BACK<br>AT THE BORDER!</h1>
+      <div class="sub">THE AGENTS GOT DARYL...</div>
+      <div class="hint">▶ PRESS SPACE TO TRY AGAIN ◀</div>
+    `;
+    overlay.style.display='block';
+  }else{player.inv=130;player.x=28;player.y=GY-40;player.vx=0;player.vy=0;}
+}
+
+function updateHUD(){
+  document.getElementById('scoreEl').textContent=String(score).padStart(6,'0');
+  document.getElementById('agentsEl').textContent=`${agentsDefeated} / ${TOTAL_AGENTS}`;
+  document.getElementById('livesEl').textContent=['♥ ♥ ♥','♥ ♥ ♡','♥ ♡ ♡','♡ ♡ ♡'][Math.max(0,3-lives)];
+}
+
+// ── BACKGROUND ────────────────────────────────────────────
+// Pine trees in background
+const bgTrees = Array.from({length:18},(_,i)=>({
+  x:i*52+Math.sin(i*2.3)*15, h:60+Math.random()*60,
+  w:20+Math.random()*15,
+}));
+
+// Distant mountains
+const mountains = [
+  {x:0,  w:280,h:160},{x:200,w:250,h:180},{x:400,w:300,h:155},
+  {x:620,w:260,h:170},{x:800,w:200,h:145},
+];
+
+const CLOUDS=[
+  {x:50,y:30,w:120,h:48,sp:.2},{x:230,y:18,w:100,h:40,sp:.16},
+  {x:420,y:38,w:130,h:52,sp:.23},{x:620,y:22,w:110,h:44,sp:.18},
+  {x:800,y:35,w:95, h:38,sp:.21},{x:160,y:88,w:80, h:32,sp:.14},
+  {x:540,y:80,w:90, h:36,sp:.17},
+];
+
+function draw(){
+  // Sky — bright Canadian winter day
+  const sg=ctx.createLinearGradient(0,0,0,H*.65);
+  sg.addColorStop(0,'#6ab0e8');sg.addColorStop(.6,'#a8d4f0');sg.addColorStop(1,'#d8eeff');
+  ctx.fillStyle=sg;ctx.fillRect(0,0,W,H);
+
+  // Sun (low winter sun)
+  const sunX=760,sunY=65;
+  const sr=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,100);
+  sr.addColorStop(0,'rgba(255,252,200,.9)');sr.addColorStop(.4,'rgba(255,230,100,.4)');sr.addColorStop(1,'transparent');
+  ctx.fillStyle=sr;ctx.fillRect(0,0,W,H*.5);
+  ctx.fillStyle='#fffff0';ctx.shadowColor='#ffff99';ctx.shadowBlur=30;
+  ctx.beginPath();ctx.arc(sunX,sunY,22,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+
+  // Distant mountains with snow caps
+  ctx.save();
+  for(const m of mountains){
+    ctx.globalAlpha=.35;
+    ctx.fillStyle='#8fa8c8';
+    ctx.beginPath();ctx.moveTo(m.x,H*.72);ctx.lineTo(m.x+m.w/2,H*.72-m.h);ctx.lineTo(m.x+m.w,H*.72);ctx.fill();
+    ctx.globalAlpha=.5;
+    ctx.fillStyle='#e8f4ff';
+    ctx.beginPath();ctx.moveTo(m.x+m.w*.35,H*.72-m.h*.65);ctx.lineTo(m.x+m.w/2,H*.72-m.h);
+    ctx.lineTo(m.x+m.w*.65,H*.72-m.h*.65);ctx.quadraticCurveTo(m.x+m.w/2,H*.72-m.h*.55,m.x+m.w*.35,H*.72-m.h*.65);ctx.fill();
+  }
+  ctx.restore();
+
+  // Clouds
+  for(const c of CLOUDS){c.x-=c.sp;if(c.x+c.w<0)c.x=W+c.w;drawCloud(c.x,c.y,c.w,c.h);}
+
+  // Background pine trees
+  ctx.save();ctx.globalAlpha=.5;
+  for(const t of bgTrees){
+    ctx.fillStyle=PINE;
+    ctx.beginPath();ctx.moveTo(t.x,H*.72);ctx.lineTo(t.x-t.w/2,H*.72-t.h*.4);ctx.lineTo(t.x+t.w/2,H*.72-t.h*.4);ctx.fill();
+    ctx.beginPath();ctx.moveTo(t.x,H*.72-t.h*.3);ctx.lineTo(t.x-t.w*.6,H*.72-t.h*.7);ctx.lineTo(t.x+t.w*.6,H*.72-t.h*.7);ctx.fill();
+    ctx.beginPath();ctx.moveTo(t.x,H*.72-t.h*.6);ctx.lineTo(t.x-t.w*.4,H*.72-t.h);ctx.lineTo(t.x+t.w*.4,H*.72-t.h);ctx.fill();
+    // Snow on trees
+    ctx.fillStyle='rgba(230,240,255,.7)';
+    ctx.beginPath();ctx.moveTo(t.x,H*.72-t.h*.62);ctx.lineTo(t.x-t.w*.3,H*.72-t.h*.72);ctx.lineTo(t.x+t.w*.3,H*.72-t.h*.72);ctx.fill();
+    ctx.beginPath();ctx.moveTo(t.x,H*.72-t.h*.88);ctx.lineTo(t.x-t.w*.2,H*.72-t.h*.95);ctx.lineTo(t.x+t.w*.2,H*.72-t.h*.95);ctx.fill();
+  }
+  ctx.restore();
+
+  // Platforms
+  for(const p of PLATFORMS)drawPlatform(p);
+
+  // Snowflakes
+  ctx.save();
+  for(const s of snowflakes){
+    ctx.globalAlpha=.55+Math.sin(frame*.05+s.sw)*.2;
+    ctx.fillStyle='#e8f4ff';
+    ctx.beginPath();ctx.arc(s.x,s.y,s.s,0,Math.PI*2);ctx.fill();
+  }
+  ctx.restore();
+
+  // Goal: Canadian flag
+  drawGoal();
+
+  // Enemies
+  for(const e of enemies)drawEnemy(e);
+
+  // Player
+  if(gameState==='playing'||gameState==='title')drawPlayer();
+
+  // Particles
+  for(const p of particles){
+    ctx.save();ctx.globalAlpha=p.life;ctx.fillStyle=p.col;
+    ctx.shadowColor=p.col;ctx.shadowBlur=6;
+    ctx.fillRect(p.x-p.sz/2,p.y-p.sz/2,p.sz,p.sz);ctx.restore();
+  }
+
+  // Progress bar — agents defeated
+  ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(10,H-7,W-20,6);
+  const pg=ctx.createLinearGradient(10,0,W-10,0);
+  pg.addColorStop(0,RED);pg.addColorStop(1,RED_LT);
+  ctx.fillStyle=pg;ctx.shadowColor=RED_LT;ctx.shadowBlur=6;
+  ctx.fillRect(10,H-7,(W-20)*(agentsDefeated/TOTAL_AGENTS),6);ctx.shadowBlur=0;
+
+  // "Defeat all agents first" warning when at goal too early
+  if(agentsDefeated<TOTAL_AGENTS&&player.x>800){
+    ctx.fillStyle='rgba(0,0,0,.75)';ctx.fillRect(W/2-160,10,320,28);
+    ctx.fillStyle='#ff4444';ctx.font='7px "Press Start 2P",monospace';
+    ctx.textAlign='center';ctx.fillText(`DEFEAT ${TOTAL_AGENTS-agentsDefeated} MORE AGENTS FIRST!`,W/2,28);
+  }
+}
+
+function drawCloud(x,y,w,h){
+  ctx.save();ctx.fillStyle='rgba(255,255,255,.9)';
+  ctx.shadowColor='rgba(200,230,255,.5)';ctx.shadowBlur=8;
+  const pf=[{cx:.18,cy:.58,r:.52},{cx:.40,cy:.35,r:.67},{cx:.62,cy:.42,r:.58},
+            {cx:.82,cy:.56,r:.48},{cx:.29,cy:.28,r:.38},{cx:.54,cy:.22,r:.36}];
+  for(const p of pf){ctx.beginPath();ctx.arc(x+p.cx*w,y+p.cy*h,p.r*h,0,Math.PI*2);ctx.fill();}
+  ctx.fillRect(x+w*.16,y+h*.52,w*.68,h*.48);ctx.restore();
+}
+
+function drawPlatform(p){
+  ctx.save();
+  if(p.t==='ground'){
+    // Snow-covered ground
+    const g=ctx.createLinearGradient(0,p.y,0,p.y+p.h);
+    g.addColorStop(0,'#8a9a8a');g.addColorStop(1,'#5a6a5a');
+    ctx.fillStyle=g;ctx.fillRect(p.x,p.y,p.w,p.h);
+    // Snow cap
+    ctx.fillStyle='#e8f4ff';ctx.fillRect(p.x,p.y,p.w,10);
+    ctx.fillStyle='#ffffff';ctx.fillRect(p.x,p.y,p.w,4);
+    // Red/white stripe Canada border post feel
+    for(let bx=p.x+10;bx<p.x+p.w;bx+=30){
+      ctx.fillStyle=bx%60<30?RED:'#ffffff';
+      ctx.globalAlpha=.25;ctx.fillRect(bx,p.y+10,15,p.h-10);
+    }
+    ctx.globalAlpha=1;
+    // Ground grid
+    ctx.strokeStyle='#5a7a5a';ctx.lineWidth=.6;
+    for(let sx=p.x+36;sx<p.x+p.w;sx+=36){ctx.beginPath();ctx.moveTo(sx,p.y+10);ctx.lineTo(sx,p.y+p.h);ctx.stroke();}
+  } else {
+    // Floating platforms — snowy ice ledges
+    const cm={
+      snow:['#c8dce8','#a0b8cc','#e8f4ff'],
+      ice: ['#a0c8e0','#7aa0c0','#c8eeff'],
+      roof:['#8ab8d0','#6898b8','#b8e8ff'],
+    };
+    const co=cm[p.t]||cm.snow;
+    ctx.fillStyle=co[0];ctx.fillRect(p.x,p.y,p.w,p.h);
+    // Snow topping
+    ctx.fillStyle=WHITE;ctx.fillRect(p.x,p.y,p.w,4);
+    // Icicles
+    ctx.fillStyle=co[1];
+    for(let ix=p.x+6;ix<p.x+p.w-6;ix+=12){
+      const ih=4+Math.sin(ix*.3)*3;
+      ctx.beginPath();ctx.moveTo(ix-2,p.y+p.h);ctx.lineTo(ix,p.y+p.h+ih);ctx.lineTo(ix+2,p.y+p.h);ctx.fill();
+    }
+    // Glow edge
+    ctx.strokeStyle=co[2];ctx.lineWidth=1.5;ctx.shadowColor=co[2];ctx.shadowBlur=6+Math.sin(frame*.06)*2;
+    ctx.beginPath();ctx.moveTo(p.x,p.y+1);ctx.lineTo(p.x+p.w,p.y+1);ctx.stroke();ctx.shadowBlur=0;
+  }
+  ctx.restore();
+}
+
+function drawEnemy(e){
+  if(e.dead){
+    ctx.save();ctx.globalAlpha=e.dT/38;ctx.fillStyle=RED;
+    ctx.shadowColor=RED;ctx.shadowBlur=10;
+    ctx.fillRect(e.x,e.y+e.h-8,e.w,8);ctx.restore();return;
+  }
+  const cx=e.x+e.w/2,cy=e.y+e.h/2;
+  const bob=Math.abs(Math.sin(frame*.09+e.x*.05))*2;
+  ctx.save();ctx.translate(cx,cy-bob);ctx.scale(e.dir,1);
+
+  const isSgt=e.t==='sergeant';
+
+  // ── BORDER AGENT ──────────────────────
+  // Legs
+  const lb=e.aF===0?2:-2;
+  ctx.fillStyle='#1a1a3a';
+  ctx.fillRect(-9,8,8,14+lb);ctx.fillRect(1,8,8,14-lb);
+  // Black boots
+  ctx.fillStyle='#000';
+  ctx.fillRect(-11,20+lb,10,6);ctx.fillRect(-1,20-lb,10,6);
+
+  // Body — uniform
+  ctx.fillStyle=isSgt?'#003366':'#1a3a5a'; // dark blue uniform
+  ctx.fillRect(-11,-10,22,20);
+  // Uniform details
+  ctx.fillStyle=isSgt?'#0050aa':'#2a5a8a';
+  ctx.fillRect(-9,-10,4,20);ctx.fillRect(5,-10,4,20);
+  // Badge
+  ctx.fillStyle=GOLD;ctx.shadowColor=GOLD;ctx.shadowBlur=4;
+  ctx.beginPath();ctx.arc(-4,-3,4,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#ffffff';ctx.font='4px monospace';ctx.textAlign='center';
+  ctx.fillText(isSgt?'SGT':'CBP',-4,-2);ctx.shadowBlur=0;
+  // Belt
+  ctx.fillStyle='#111';ctx.fillRect(-11,8,22,3);
+  ctx.fillStyle=GOLD;ctx.fillRect(-2,8,4,3);
+
+  // Arms
+  ctx.fillStyle=isSgt?'#003366':'#1a3a5a';
+  ctx.fillRect(-15,-9,5,14);ctx.fillRect(10,-9,5,14);
+  // Hands
+  ctx.fillStyle='#f5deb3';
+  ctx.beginPath();ctx.arc(-13,6,4,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(13,6,4,0,Math.PI*2);ctx.fill();
+  // Sergeant has a baton
+  if(isSgt){
+    ctx.fillStyle='#1a0800';ctx.fillRect(13,0,3,18);
+    ctx.fillStyle='#3a1800';ctx.fillRect(12,0,4,4);
+  }
+
+  // Neck
+  ctx.fillStyle='#f5deb3';ctx.fillRect(-4,-12,8,4);
+
+  // Head
+  ctx.fillStyle='#f5deb3';ctx.fillRect(-9,-26,18,16);
+  // Jawline shadow
+  ctx.fillStyle='#d4a878';ctx.fillRect(-7,-12,14,3);
+
+  // Eyes — stern
+  ctx.fillStyle='#fff';ctx.fillRect(-7,-22,5,4);ctx.fillRect(2,-22,5,4);
+  ctx.fillStyle='#1a1a1a';ctx.fillRect(-6,-21,4,3);ctx.fillRect(3,-21,4,3);
+  ctx.fillStyle='#000';ctx.fillRect(-5,-21,2,2);ctx.fillRect(4,-21,2,2);
+  // Stern brow
+  ctx.fillStyle='#1a1a1a';ctx.lineWidth=2;
+  ctx.fillRect(-8,-24,6,2);ctx.fillRect(2,-24,6,2);
+  // Frown
+  ctx.strokeStyle='#c08060';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(0,-14,4,Math.PI+.3,-.3);ctx.stroke();
+
+  // Hat — border patrol cap
+  ctx.fillStyle=isSgt?'#002244':'#1a3a5a';
+  ctx.fillRect(-10,-34,20,10);
+  ctx.fillRect(-12,-28,24,4);
+  ctx.fillStyle=isSgt?'#003388':'#2a5a8a';
+  ctx.fillRect(-10,-34,20,3);
+  // Hat badge
+  ctx.fillStyle=GOLD;ctx.shadowColor=GOLD;ctx.shadowBlur=4;
+  ctx.beginPath();ctx.arc(0,-30,4,0,Math.PI*2);ctx.fill();
+  if(isSgt){
+    ctx.fillStyle=WHITE;ctx.shadowBlur=0;
+    ctx.font='bold 4px serif';ctx.textAlign='center';ctx.fillText('⭐',0,-29);
+  }
+  ctx.shadowBlur=0;
+
+  ctx.restore();
+}
+
+function drawPlayer(){
+  if(player.inv>0&&Math.floor(player.inv/5)%2===0)return;
+  const{x,y,w,h,dir,aF}=player;
+  ctx.save();ctx.translate(x+w/2,y+h/2);ctx.scale(dir,1);
+
+  // Shadow
+  ctx.globalAlpha=.2;ctx.fillStyle='#000';
+  ctx.beginPath();ctx.ellipse(0,h/2+3,10,4,0,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+
+  const ls=player.onGround?Math.sin(aF*Math.PI/2)*5:0;
+
+  // ── DARYL ───────────────────────────
+  // Based on photo: bald, goatee, vest over dress shirt, dark tie
+
+  // LEGS — dark dress trousers
+  ctx.fillStyle='#1a1a2e';
+  ctx.fillRect(-9,8,8,16);ctx.fillRect(1,8,8,16);
+  // Dress shoes
+  ctx.fillStyle='#0d0d0d';
+  ctx.fillRect(-11+ls,22,10,6);ctx.fillRect(0-ls,22,10,6);
+  ctx.fillStyle='#333';
+  ctx.fillRect(-10+ls,22,5,2);ctx.fillRect(1-ls,22,5,2);
+
+  // DRESS SHIRT
+  ctx.fillStyle='#f0f0f0';
+  ctx.fillRect(-10,-10,20,20);
+  // Shirt collar
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(-4,-10,8,6);
+
+  // VEST — grey/tan like in photo
+  ctx.fillStyle='#8a8070';
+  ctx.fillRect(-10,-10,9,19);
+  ctx.fillRect(1,-10,9,19);
+  ctx.fillStyle='#7a7060';
+  ctx.fillRect(-10,-10,3,19);ctx.fillRect(8,-10,2,19);
+  // Vest buttons
+  ctx.fillStyle='#555';
+  for(let i=0;i<4;i++)ctx.fillRect(-1,-7+i*5,2,3);
+
+  // TIE — dark tie like in photo
+  ctx.fillStyle='#1a1a2e';
+  ctx.beginPath();ctx.moveTo(-2,-10);ctx.lineTo(2,-10);ctx.lineTo(3,6);ctx.lineTo(0,10);ctx.lineTo(-3,6);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#2a2a4e';
+  ctx.fillRect(-1,-10,2,4);
+
+  // ARMS — vest sleeves showing white shirt cuffs
+  ctx.fillStyle='#8a8070';
+  ctx.fillRect(-15,-9,6,13);ctx.fillRect(9,-9,6,13);
+  // White shirt cuffs
+  ctx.fillStyle='#f0f0f0';
+  ctx.fillRect(-15,2,6,4);ctx.fillRect(9,2,6,4);
+  // Hands — warm brown skin
+  ctx.fillStyle=SKIN;
+  ctx.beginPath();ctx.arc(-13,8,4,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(13,8,4,0,Math.PI*2);ctx.fill();
+
+  // NECK — brown skin
+  ctx.fillStyle=SKIN;ctx.fillRect(-4,-12,8,4);
+
+  // HEAD — round, warm brown skin
+  ctx.fillStyle=SKIN;
+  ctx.beginPath();ctx.ellipse(0,-22,11,13,0,0,Math.PI*2);ctx.fill();
+  // Jaw/chin shape
+  ctx.fillStyle=SKIN;
+  ctx.fillRect(-9,-28,18,18);
+  ctx.beginPath();ctx.arc(0,-14,9,0,Math.PI);ctx.fill();
+  // Ear
+  ctx.fillStyle=SKIN_LT;
+  ctx.beginPath();ctx.ellipse(11,-22,3,5,0,0,Math.PI*2);ctx.fill();
+  // Ear shadow
+  ctx.fillStyle=SKIN;ctx.fillRect(-11,-28,3,18);
+
+  // BALD HEAD — smooth, shiny
+  ctx.fillStyle=SKIN;
+  ctx.beginPath();ctx.arc(0,-28,11,Math.PI,0);ctx.fill();
+  ctx.fillRect(-11,-28,22,6);
+  // Head shine (bald reflection)
+  ctx.fillStyle='rgba(255,220,180,.35)';
+  ctx.beginPath();ctx.arc(-3,-34,5,0,Math.PI*2);ctx.fill();
+
+  // GOATEE — like in photo
+  ctx.fillStyle='#1a0800';
+  // Mustache
+  ctx.beginPath();ctx.arc(0,-16,5,Math.PI+.2,-.2);ctx.fill();
+  // Chin beard
+  ctx.beginPath();ctx.ellipse(0,-10,5,5,0,0,Math.PI*2);ctx.fill();
+  // Goatee trim lines
+  ctx.fillStyle='#2a1800';
+  ctx.beginPath();ctx.arc(0,-15,4,Math.PI+.3,-.3);ctx.fill();
+
+  // EYES — warm, expressive (big smile energy)
+  ctx.fillStyle='#fff';
+  ctx.fillRect(-7,-24,5,5);ctx.fillRect(2,-24,5,5);
+  ctx.fillStyle='#3d1800';
+  ctx.fillRect(-6,-23,4,3);ctx.fillRect(3,-23,4,3);
+  ctx.fillStyle='#000';
+  ctx.fillRect(-5,-23,2,2);ctx.fillRect(4,-23,2,2);
+  ctx.fillStyle='#fff';
+  ctx.fillRect(-4,-24,1,1);ctx.fillRect(5,-24,1,1);
+
+  // NOSE — broad
+  ctx.fillStyle=SKIN_LT;
+  ctx.beginPath();ctx.arc(0,-18,4,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=SKIN;
+  ctx.beginPath();ctx.arc(-1,-18,3,0,Math.PI*2);ctx.fill();
+
+  // BIG SMILE — Daryl's signature grin
+  ctx.strokeStyle='#1a0800';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(0,-14,5,.15,Math.PI-.15);ctx.stroke();
+  // Teeth showing
+  ctx.fillStyle='#ffffff';
+  ctx.beginPath();ctx.arc(0,-12,3.5,.2,Math.PI-.2);ctx.fill();
+
+  ctx.restore();
+}
+
+function drawGoal(){
+  const g=GOAL,gx=g.x+g.w/2,gy=g.y;
+  const pulse=.65+Math.sin(frame*.08)*.35;
+  const ready=agentsDefeated>=TOTAL_AGENTS;
+
+  ctx.save();
+
+  // Aura when all agents defeated
+  if(ready){
+    const aura=ctx.createRadialGradient(gx,gy+g.h/2,0,gx,gy+g.h/2,110);
+    aura.addColorStop(0,`rgba(255,50,50,${.3*pulse})`);
+    aura.addColorStop(1,'transparent');
+    ctx.fillStyle=aura;ctx.fillRect(g.x-70,g.y-70,g.w+140,g.h+140);
+  }
+
+  const px=gx,py=gy+g.h;
+
+  // Flag pole base
+  ctx.fillStyle='#5a5a5a';
+  ctx.fillRect(px-4,py-10,8,10);
+  ctx.fillStyle='#8a8a8a';
+  ctx.fillRect(px-8,py-10,16,4);
+
+  // Pole
+  ctx.fillStyle='#c0c0c0';
+  ctx.fillRect(px-2,py-g.h,4,g.h-10);
+  ctx.fillStyle='#e0e0e0';
+  ctx.fillRect(px-1,py-g.h,2,g.h-10);
+
+  // Golden ball top
+  ctx.fillStyle=GOLD;ctx.shadowColor=GOLD;ctx.shadowBlur=10*pulse;
+  ctx.beginPath();ctx.arc(px,py-g.h,7,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+
+  // ── CANADIAN FLAG ──────────────────────
+  const flagY=py-g.h+8;
+  const fw=65,fh=42;
+
+  // Wave effect
+  const waveY=(sx)=>Math.sin(sx*.05+frame*.04)*2;
+
+  // White background
+  ctx.save();
+  ctx.beginPath();
+  for(let fx=0;fx<=fw;fx++){ctx.lineTo(px+2+fx,flagY+waveY(fx));}
+  for(let fx=fw;fx>=0;fx--){ctx.lineTo(px+2+fx,flagY+fh+waveY(fx));}
+  ctx.closePath();ctx.fillStyle=WHITE;ctx.fill();
+
+  // Red left stripe
+  ctx.beginPath();
+  for(let fx=0;fx<=fw*.25;fx++){ctx.lineTo(px+2+fx,flagY+waveY(fx));}
+  for(let fx=fw*.25;fx>=0;fx--){ctx.lineTo(px+2+fx,flagY+fh+waveY(fx));}
+  ctx.closePath();ctx.fillStyle=RED;ctx.fill();
+
+  // Red right stripe
+  ctx.beginPath();
+  for(let fx=fw*.75;fx<=fw;fx++){ctx.lineTo(px+2+fx,flagY+waveY(fx));}
+  for(let fx=fw;fx>=fw*.75;fx--){ctx.lineTo(px+2+fx,flagY+fh+waveY(fx));}
+  ctx.closePath();ctx.fillStyle=RED;ctx.fill();
+
+  // Maple leaf in center
+  const leafCX=px+2+fw/2;
+  const leafCY=flagY+fh/2+waveY(fw/2);
+  ctx.fillStyle=RED;
+  if(ready){ctx.shadowColor=RED;ctx.shadowBlur=12*pulse;}
+  drawMapleLeaf(leafCX,leafCY,fh*.32);
+  ctx.shadowBlur=0;
+  ctx.restore();
+
+  // "BORDER CROSSING" sign
+  ctx.fillStyle='#2a2a2a';
+  ctx.fillRect(px-45,py-12,90,14);
+  ctx.strokeStyle=GOLD;ctx.lineWidth=1.5;ctx.strokeRect(px-45,py-12,90,14);
+  ctx.fillStyle=WHITE;ctx.font='5px "Press Start 2P",monospace';ctx.textAlign='center';
+  ctx.fillText('CANADA BORDER',px,py-3);
+
+  // Warning if not ready
+  if(!ready){
+    ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(px-62,gy-18,124,18);
+    ctx.fillStyle=RED_LT;ctx.font='6px "Press Start 2P",monospace';ctx.textAlign='center';
+    ctx.fillText(`DEFEAT ${TOTAL_AGENTS-agentsDefeated} AGENTS`,px,gy-4);
+  }
+
+  // "WELCOME TO CANADA" arch if won
+  if(gameState==='win'){
+    ctx.fillStyle=RED;ctx.shadowColor=RED;ctx.shadowBlur=15;
+    ctx.font='bold 10px "Bangers",cursive';ctx.textAlign='center';
+    ctx.fillText('🍁 WELCOME TO CANADA 🍁',px,gy-25);ctx.shadowBlur=0;
+  }
+
+  ctx.restore();
+}
+
+function drawMapleLeaf(cx,cy,size){
+  ctx.save();ctx.translate(cx,cy);ctx.scale(size/15,size/15);
+  ctx.beginPath();
+  ctx.moveTo(0,15);
+  ctx.lineTo(-2,5);ctx.lineTo(-8,8);ctx.lineTo(-6,2);
+  ctx.lineTo(-12,0);ctx.lineTo(-8,-2);ctx.lineTo(-10,-8);
+  ctx.lineTo(-4,-6);ctx.lineTo(-2,-12);ctx.lineTo(0,-8);
+  ctx.lineTo(2,-12);ctx.lineTo(4,-6);ctx.lineTo(10,-8);
+  ctx.lineTo(8,-2);ctx.lineTo(12,0);ctx.lineTo(6,2);
+  ctx.lineTo(8,8);ctx.lineTo(2,5);
+  ctx.closePath();ctx.fill();
+  ctx.restore();
+}
+
+// ── INPUT ─────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(e.code==='Space'){
+    if(gameState==='title'){gameState='playing';overlay.style.display='none';initLevel();}
+    else if(gameState==='dead'){lives=3;score=0;updateHUD();initLevel();gameState='playing';overlay.style.display='none';}
+    else if(gameState==='win'){score=0;updateHUD();initLevel();gameState='playing';overlay.style.display='none';}
+  }
+  e.preventDefault();
+});
+document.addEventListener('keyup',e=>{keys[e.code]=false;});
+
+initLevel();
+requestAnimationFrame(update);
+</script>
+</body>
+</html>
